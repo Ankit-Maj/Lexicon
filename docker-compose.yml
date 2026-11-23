@@ -1,34 +1,112 @@
-version: '3.8'
+# ── LEXICON Docker Compose Configuration ──────────────────────────────────────
+#
+# Default host ports (override via environment variables):
+#   LEXICON_BACKEND_PORT  = 8000   (backend API)
+#   LEXICON_FRONTEND_PORT = 3000   (frontend / nginx)
+#   LEXICON_MONGO_PORT    = 27017  (MongoDB, only when ENABLE_MONGO=true)
+#
+# Quick start:
+#   cp .env.example .env     # fill in API keys
+#   docker compose up --build
+#
+# Frontend:  http://localhost:3000
+# Backend:   http://localhost:8000
+# API docs:  http://localhost:8000/docs
+
+networks:
+  lexicon_net:
+    driver: bridge
+
+volumes:
+  mongo_data:
+    driver: local
+  backend_uploads:
+    driver: local
+  backend_reports:
+    driver: local
+  backend_logs:
+    driver: local
 
 services:
+
+  # ── Backend ──────────────────────────────────────────────────────────────────
   backend:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: lexicon_backend
     ports:
-      - "8000:8000"
+      - "${LEXICON_BACKEND_PORT:-8000}:8000"
     env_file:
-      - .env
+      - path: .env
+        required: false
+    environment:
+      # Allow overriding MongoDB URI to point at the local mongo service.
+      # If MONGODB_URI is already set in .env, that value takes precedence.
+      MONGODB_URI: "${MONGODB_URI:-}"
     volumes:
-      - ./app/uploads:/workspace/app/uploads
-      - ./app/reports:/workspace/app/reports
+      # Persist uploads and reports across container restarts.
+      # Named volumes prevent data loss on `docker compose restart`.
+      - backend_uploads:/workspace/app/uploads
+      - backend_reports:/workspace/app/reports
+      - backend_logs:/workspace/app/logs
+    networks:
+      - lexicon_net
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 20s
 
+  # ── Frontend ─────────────────────────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        # Change this to your server's public IP or domain when deploying
-        VITE_API_URL: https://lexicon-research-backend.onrender.com
+        # VITE_API_URL is baked into the JS bundle at build time.
+        # In Docker Compose, setting /api lets nginx reverse-proxy API requests
+        # to backend:8000 on the internal network without CORS or hardcoded hostnames.
+        # If accessing the backend directly from another host, this can be overridden.
+        VITE_API_URL: "${VITE_API_URL:-/api}"
+    container_name: lexicon_frontend
     ports:
-      - "80:80"
+      - "${LEXICON_FRONTEND_PORT:-3000}:80"
     depends_on:
       backend:
         condition: service_healthy
+    networks:
+      - lexicon_net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ── MongoDB (optional) ───────────────────────────────────────────────────────
+  # Enabled only when ENABLE_MONGO=true in your environment or .env file.
+  # To use it, also set:  MONGODB_URI=mongodb://mongo:27017/research_platform
+  #
+  # The app works without MongoDB — it falls back to in-memory persistence.
+  mongo:
+    image: mongo:7
+    container_name: lexicon_mongo
+    profiles:
+      - mongo
+    ports:
+      - "${LEXICON_MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - lexicon_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s

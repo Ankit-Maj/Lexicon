@@ -214,14 +214,42 @@ npm run dev
 
 Frontend runs at `http://localhost:5173`, backend at `http://localhost:8000`.
 
-### Docker (full stack)
+### Docker Deployment (Full Stack)
 
+**1. Copy and configure environment variables**
 ```bash
-docker-compose up --build
+cp .env.example .env
+```
+Fill in at least `GROQ_API_KEY` and `TAVILY_API_KEY` in `.env`.
+
+**2. Start containers (in-memory mode, default)**
+```bash
+docker compose up --build -d
 ```
 
-- Backend: `http://localhost:8000`
-- Frontend: `http://localhost:80`
+- Frontend: `http://localhost:3000` (configurable via `LEXICON_FRONTEND_PORT`)
+- Backend API: `http://localhost:8000` (configurable via `LEXICON_BACKEND_PORT`)
+- API Docs: `http://localhost:8000/docs`
+- Health check: `http://localhost:8000/health` or `http://localhost:3000/health`
+- Readiness check: `http://localhost:8000/ready` or `http://localhost:3000/ready`
+
+**3. Start with optional local MongoDB**
+```bash
+docker compose --profile mongo up --build -d
+```
+When running with the `mongo` profile, set `MONGODB_URI=mongodb://mongo:27017/research_platform` in your `.env`.
+
+**4. Check container status and health**
+```bash
+docker compose ps
+docker compose logs -f
+```
+
+**5. Stop containers**
+```bash
+docker compose down
+```
+> Note: User uploads and compiled reports are safely stored in named Docker volumes (`backend_uploads`, `backend_reports`, `backend_logs`) and will not be lost across restarts.
 
 ---
 
@@ -269,6 +297,7 @@ All endpoints except `/health` and `/auth/*` require a JWT bearer token.
 | `DELETE` | `/session/{session_id}` | Clean up session RAG store + uploads |
 | `POST` | `/admin/cleanup` | Remove all expired sessions |
 | `GET` | `/health` | Health check |
+| `GET` | `/ready` | Readiness check (confirms DB mode & ready status) |
 
 ### SSE Stream Format
 

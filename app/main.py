@@ -1,4 +1,3 @@
-import shutil
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -28,17 +27,12 @@ async def lifespan(app: FastAPI):
     logger.info("Disconnecting from database...")
     await disconnect_db()
 
-    logger.info("Cleaning up session uploads and generated reports...")
-    try:
-        if UPLOAD_DIR.exists():
-            shutil.rmtree(UPLOAD_DIR)
-            UPLOAD_DIR.mkdir()
-        if REPORT_DIR.exists():
-            shutil.rmtree(REPORT_DIR)
-            REPORT_DIR.mkdir()
-        logger.info("Cleanup completed successfully.")
-    except Exception as e:
-        logger.error(f"Error during cleanup: {e}")
+    # NOTE: Persistent upload/report directories are intentionally NOT deleted
+    # on shutdown.  Wiping them on every container restart would destroy user
+    # data mounted via Docker named volumes.  Session-level cleanup is handled
+    # by the DELETE /session/{session_id} endpoint and the POST /admin/cleanup
+    # expired-session sweeper, both of which operate on individual sessions.
+    logger.info("Shutdown complete. Upload and report directories preserved.")
 
 
 app = FastAPI(

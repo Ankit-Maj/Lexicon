@@ -317,3 +317,17 @@ async def run_cleanup(current_user: dict = Depends(get_current_user)):
 @router.get("/health")
 async def health_check():
     return {"status": "ok", "version": "2.0.0"}
+
+
+@router.get("/ready")
+async def readiness_check():
+    """Readiness probe: confirms the application is fully initialised.
+
+    Returns 200 when the app is ready to serve traffic.  Unlike /health, this
+    endpoint can be extended to gate on dependency availability (e.g. database
+    connectivity) for orchestrator readiness checks without breaking existing
+    /health consumers.
+    """
+    from app.services.database import _use_mongo
+    db_mode = "mongodb" if _use_mongo() else "in-memory"
+    return {"status": "ready", "version": "2.0.0", "db": db_mode}
